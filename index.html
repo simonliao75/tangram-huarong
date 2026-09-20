@@ -4,6 +4,26 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>七巧板华容道</title>
+<script>
+  // 全局错误兜底：任何脚本错误都显示到提示行，避免出现"棋盘空白但没有任何提示"的静默失败。
+  // 必须放在最前面，才能捕获后续 <script> 的解析期语法错误。
+  (function () {
+    function show(msg) {
+      var el = document.getElementById('hintLine');
+      if (el) el.textContent = msg;
+      else document.addEventListener('DOMContentLoaded', function () {
+        var e2 = document.getElementById('hintLine');
+        if (e2) e2.textContent = msg;
+      });
+    }
+    window.addEventListener('error', function (e) {
+      show('⚠ 脚本错误：' + (e.message || e.type || '未知') + (e.lineno ? '（第 ' + e.lineno + ' 行）' : ''));
+    });
+    window.addEventListener('unhandledrejection', function (e) {
+      show('⚠ 脚本错误：' + ((e.reason && e.reason.message) || e.reason || '未知'));
+    });
+  })();
+</script>
 <style>
   :root { --bg:#F5F3EE; --ink:#222; }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -22,6 +42,15 @@
   .hud { display:flex; gap:10px; font-variant-numeric: tabular-nums; }
   .hud .box { background:#fff; border:1px solid #ddd; border-radius:8px; padding:4px 10px; font-size:13px; }
   .hud .box b { font-size:15px; margin-left:3px; }
+  .title .sub { font-size:12px; color:#888; margin-top:2px; }
+  .title .progress { color:#CAAC33; font-size:12px; letter-spacing:1px; }
+  .title .level-badge {
+    display:inline-block; margin-top:4px; padding:3px 12px;
+    font-size:16px; font-weight:700; color:#fff; letter-spacing:.5px;
+    background:linear-gradient(135deg,#327C99,#0a84ff); border-radius:999px;
+    box-shadow:0 2px 6px rgba(50,124,153,.35);
+  }
+  button.ctrl:disabled { opacity:.4; cursor:default; }
   .hint-line { width:100%; min-height:18px; text-align:center; font-size:13px; color:#777; word-break:break-all; }
   #board {
     display:block; margin:0 auto; max-width:100%;
@@ -32,6 +61,11 @@
   .hintpiece { stroke:#ff8c00 !important; stroke-width:.06 !important; filter:drop-shadow(0 0 5px #ff8c00); }
   .shake { animation: shake .28s; }
   @keyframes shake { 0%,100%{transform:translate(0,0)} 25%{transform:translate(7px,0)} 50%{transform:translate(-7px,0)} 75%{transform:translate(4px,0)} }
+  .goal-flash { animation: goalflash 1s ease-in-out 3; }
+  @keyframes goalflash {
+    0%,100% { filter:none; stroke:#3A3A3A; }
+    50% { stroke:#0a84ff !important; stroke-width:.07 !important; filter:drop-shadow(0 0 8px #0a84ff); }
+  }
   .controls { width:100%; display:flex; gap:8px; justify-content:center; flex-wrap:wrap; }
   button.ctrl {
     background:#fff; border:1px solid #ccc; border-radius:9px; padding:9px 14px;
@@ -60,10 +94,14 @@
 <body>
 <div id="app">
   <header>
-    <h1>七巧板华容道</h1>
+    <div class="title">
+      <h1>七巧板华容道</h1>
+      <div><span class="level-badge" id="levelName">第1关 · 蓝块出逃</span></div>
+      <div class="sub progress" id="levelProgress"></div>
+    </div>
     <div class="hud">
       <span class="box">⏱<b id="timer">00:00</b></span>
-      <span class="box">步数 <b id="moves">0</b><span style="color:#999"> / 13</span></span>
+      <span class="box">步数 <b id="moves">0</b><span style="color:#999"> / <span id="optimal">13</span></span></span>
     </div>
   </header>
   <div class="hint-line" id="hintLine">把蓝色方块移到底部正中的蓝框（出口）｜按住棋子拖动，或点选后用方向键/Q E Z C/方向盘</div>
@@ -77,6 +115,8 @@
     <button class="ctrl" id="btnUndo">↩ 撤销</button>
     <button class="ctrl" id="btnReset">🔄 重开</button>
     <button class="ctrl primary" id="btnHint">💡 提示</button>
+    <button class="ctrl" id="btnPrev">‹ 上一关</button>
+    <button class="ctrl" id="btnNext">下一关 ›</button>
   </div>
 </div>
 
@@ -85,41 +125,94 @@
   <div class="stars" id="resStars">★★★</div>
   <div class="meta" id="resMeta"></div>
   <button class="ctrl primary" id="btnAgain">再玩一次</button>
+  <button class="ctrl primary" id="btnNextLevel" style="display:none">下一关 ›</button>
 </div></div>
 
+<script src="pages/index/levels.js"></script>
 <script>
 "use strict";
-/* ================= 常量与关卡数据（源自 PRD，几何已实测标定） ================= */
+/* ================= 常量与关卡数据（多关卡，数据来自 levels.js） ================= */
 const BOX = 3, EPS = 1e-6;
-const GOAL = [1, 0];
 const DIRS = [[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1],[0,-1],[1,-1]];
 const DIR_NAME = {"1,0":"右","-1,0":"左","0,1":"上","0,-1":"下","1,1":"右上","1,-1":"右下","-1,1":"左上","-1,-1":"左下"};
-const LEVEL = { pieces: [
-  { id:'tri_large',   name:'绿·大三角',     color:'#6F9144', poly:[[0,0],[2,0],[0,2]],        offset:[0,0], goal:false },
-  { id:'tri_small_a', name:'紫·小三角A',    color:'#35346C', poly:[[0,0],[0,1],[1,1]],        offset:[0,2], goal:false },
-  { id:'square',      name:'蓝·正方形(目标)', color:'#327C99', poly:[[0,0],[1,0],[1,1],[0,1]], offset:[1,2], goal:true  },
-  { id:'tri_medium',  name:'红·中三角',     color:'#AE4433', poly:[[0,1],[2,1],[1,0]],        offset:[1,1], goal:false },
-  { id:'tri_small_b', name:'粉·小三角B',    color:'#CB7D89', poly:[[0,0],[1,0],[1,1]],        offset:[2,1], goal:false },
-  { id:'para',        name:'黄·平行四边形',  color:'#CAAC33', poly:[[0,1],[1,0],[2,0],[1,1]],  offset:[1,0], goal:false },
-]};
+const LEVELS = window.LEVELS;      // 由 <script src="pages/index/levels.js"> 提供（与小程序端共用同一份数据）
+if(!LEVELS || !LEVELS.length) throw new Error('关卡数据未加载：请确认 index.html 同目录下的 pages/index/levels.js 可访问');
+let levelIndex = 0, LEVEL = LEVELS[0], GOAL = LEVEL.goal.slice(), optimal = LEVEL.optimal;
 
 /* ================= 状态 ================= */
 let pieces = null, moves = 0, won = false, selected = null, undoStack = [], t0 = null, timerHandle = null;
 const svg = document.getElementById('board');
 const $ = id => document.getElementById(id);
 
-window.addEventListener('error', e => {            // 任何脚本错误直接显示在提示行，方便定位
-  const el = $('hintLine');
-  if(el) el.textContent = '⚠ 脚本错误：' + (e.message||e.type||'未知');
-});
+/* ================= 关卡切换 ================= */
+function setLevel(idx){
+  idx = Math.max(0, Math.min(LEVELS.length - 1, idx));
+  levelIndex = idx; LEVEL = LEVELS[idx]; GOAL = LEVEL.goal.slice(); optimal = LEVEL.optimal;
+  $('levelName').textContent = LEVEL.name;
+  $('optimal').textContent = optimal;
+  updateNav();
+  updateProgress();
+}
+function gotoLevel(idx){ setLevel(idx); reset(); }
+function isUnlocked(idx){
+  if(idx <= 0) return true;                          // 第 1 关始终可玩
+  return levelStars(LEVELS[idx-1].id) > 0;           // 前一关已通关才解锁
+}
+function updateNav(){
+  const p = $('btnPrev'), n = $('btnNext');
+  p.disabled = levelIndex <= 0;
+  const locked = !isUnlocked(levelIndex + 1);
+  n.disabled = locked;
+  n.textContent = locked ? '🔒 下一关' : '下一关 ›';
+}
+function starsFor(m){ return m <= optimal ? 3 : m <= optimal + 5 ? 2 : 1; }
+
+/* ================= 关卡进度与最佳成绩 ================= */
+function loadAllBest(){
+  try{ return JSON.parse(localStorage.getItem('tangram_best') || '{}'); }catch(e){ return {}; }
+}
+function levelStars(id){
+  const b = loadAllBest()[id];
+  return b ? (b.stars || 1) : 0;      // 0 = 未通关
+}
+function totalStars(){
+  return LEVELS.reduce((s, L) => s + levelStars(L.id), 0);
+}
+function updateProgress(){
+  const el = $('levelProgress');
+  if(!el) return;
+  const done = LEVELS.filter(L => levelStars(L.id) > 0).length;
+  el.textContent = '本关 ' + '★'.repeat(levelStars(LEVEL.id)) + '☆'.repeat(3 - levelStars(LEVEL.id))
+    + ' ｜ 总进度 ' + totalStars() + '/' + (LEVELS.length * 3) + ' 星';
+}
+
+/* ================= 目标块闪烁提示 ================= */
+let goalFlashId = null;
+function flashGoal(){
+  const g = pieces.find(p => p.goal);
+  if(!g) return;
+  if(goalFlashId){ clearTimeout(goalFlashId); goalFlashId = null; }
+  const el = svg.querySelector('polygon[data-id="'+g.id+'"]');
+  if(!el) return;
+  el.classList.remove('goal-flash'); void el.offsetWidth;   // 重新触发动画
+  el.classList.add('goal-flash');
+  // 动画时长 = 1s × 3 次 = 3s，结束后移除类
+  goalFlashId = setTimeout(() => {
+    const e2 = svg.querySelector('polygon.goal-flash');
+    if(e2) e2.classList.remove('goal-flash');
+    goalFlashId = null;
+  }, 3100);
+}
 
 function reset() {
   pieces = LEVEL.pieces.map(p => ({ ...p, poly:p.poly.map(v=>v.slice()), offset:p.offset.slice() }));
   moves = 0; won = false; selected = null; undoStack = [];
   stopTimer(); t0 = null; $('timer').textContent = '00:00'; $('moves').textContent = '0';
   $('result').classList.remove('show');
-  hintLine('把蓝色方块移到底部正中的蓝框（出口）｜按住棋子拖动，或点选后用方向键/Q E Z C/方向盘');
+  const gn = pieces.find(p=>p.goal).name.replace('(目标)','');
+  hintLine('把【'+gn+'】移到虚线框（出口）｜按住棋子拖动，或点选后用方向键/Q E Z C/方向盘');
   render();
+  flashGoal();      // 每关开始闪烁提示目标块
 }
 
 /* ================= 几何 ================= */
@@ -207,26 +300,41 @@ function fmt(ms){ const s=Math.floor(ms/1000); return String(Math.floor(s/60)).p
 
 function win(){
   won = true; stopTimer();
-  const timeMs = Date.now()-t0, stars = moves<=13?3 : moves<=18?2 : 1;
+  const timeMs = Date.now()-t0, stars = starsFor(moves);
+  const prevBest = loadAllBest()[LEVEL.id];
   $('resStars').textContent = '★'.repeat(stars) + '☆'.repeat(3-stars);
-  $('resMeta').innerHTML = '步数 <b>'+moves+'</b> · 用时 '+fmt(timeMs);
+  let meta = '步数 <b>'+moves+'</b> · 用时 '+fmt(timeMs);
+  if(prevBest){
+    if(moves < prevBest.moves) meta += '<br><span style="color:#E23B2E">🏆 新纪录！</span>（原最佳 '+prevBest.moves+' 步）';
+    else if(stars > (prevBest.stars||1)) meta += '<br><span style="color:#E23B2E">🏆 星级提升！</span>';
+    else meta += '<br>最佳 '+prevBest.moves+' 步';
+  }
+  $('resMeta').innerHTML = meta;
+  const hasNext = levelIndex < LEVELS.length - 1;
+  const nb = $('btnNextLevel');
+  if(hasNext){ nb.style.display = ''; $('btnAgain').textContent = '重玩本关'; $('btnAgain').classList.remove('primary'); }
+  else { nb.style.display = 'none'; $('btnAgain').textContent = '再玩一次'; $('btnAgain').classList.add('primary'); }
   $('result').classList.add('show');
   saveBest(moves, timeMs, stars);
+  updateProgress();
+  updateNav();      // 通关后解锁下一关，刷新按钮状态
 }
 
 /* ================= 本地记录（仅最佳成绩） ================= */
 function saveBest(moves, timeMs, stars){
   try{
     const k='tangram_best', prev = JSON.parse(localStorage.getItem(k)||'{}');
-    const cur = prev['level-1']||{moves:Infinity,timeMs:Infinity};
+    const cur = prev[LEVEL.id]||{moves:Infinity,timeMs:Infinity};
     const better = moves<cur.moves || (moves===cur.moves && timeMs<cur.timeMs);
-    if(better) prev['level-1']={moves,timeMs,stars,at:new Date().toISOString()};
+    if(better) prev[LEVEL.id]={moves,timeMs,stars,at:new Date().toISOString()};
     localStorage.setItem(k, JSON.stringify(prev));
   }catch(e){}
 }
 
 /* ================= 渲染 ================= */
 function render(){
+  const gp = pieces.find(p=>p.goal);          // 出口 = 目标块形状在 GOAL 位置的虚线轮廓
+  const exitPts = gp ? worldOf({poly:gp.poly}, GOAL[0], GOAL[1]).map(([x,y])=>x.toFixed(3)+','+y.toFixed(3)).join(' ') : '';
   svg.innerHTML =
     '<g transform="matrix(1 0 0 -1 0 3)">' +
       '<rect x="0" y="0" width="3" height="3" fill="#fff" stroke="#222" stroke-width="0.03"/>' +
@@ -234,7 +342,7 @@ function render(){
         const pts = worldOf(p).map(([x,y])=>x.toFixed(3)+','+y.toFixed(3)).join(' ');
         return '<polygon data-id="'+p.id+'" points="'+pts+'" fill="'+p.color+'" stroke="#3A3A3A" stroke-width="'+(p.goal?0.02:0.012)+'" stroke-linejoin="round"><title>'+p.name+'</title></polygon>';
       }).join('') +
-      '<rect x="1" y="0" width="1" height="1" fill="none" stroke="#0a84ff" stroke-width="0.06" stroke-dasharray="0.14 0.09" pointer-events="none"/>' +
+      '<polygon points="'+exitPts+'" fill="none" stroke="#0a84ff" stroke-width="0.06" stroke-dasharray="0.14 0.09" pointer-events="none"/>' +
     '</g>' +
     pieces.map((p, idx)=>{
       const [cx, cy] = centroid(p.poly);
@@ -287,9 +395,12 @@ function onDragMove(p){
   if(!drag) return;
   resX += p.x-drag.lx; resY += p.y-drag.ly; drag.lx=p.x; drag.ly=p.y;
   const dir = snap8(resX, resY);
-  const availX = dir[0] !== 0 ? Math.abs(resX) : Infinity;
-  const availY = dir[1] !== 0 ? Math.abs(resY) : Infinity;
-  const n = Math.min(Math.floor(Math.min(availX, availY)), 6);
+  // 沿「识别出的移动方向」的位移（格）来计步。旧写法 min(|resX|,|resY|) 会让斜向一步
+  // 要求两个轴都拖满一整格（45° 要 1.41 格、30°/60° 要 2 格），且没到阈值时静默不动，
+  // 看起来就像"这个方向走不了"。改成投影后任何角度手感一致，正交方向行为不变。
+  const dirLen = Math.hypot(dir[0], dir[1]);
+  const proj = Math.max(0, (resX * dir[0] + resY * dir[1]) / dirLen);
+  const n = Math.min(Math.floor(proj + 1e-9), 6);
   let done = 0;
   for(let k = 0; k < n; k++){
     if(!tryMove(drag.id, dir[0], dir[1])) break;
@@ -298,7 +409,7 @@ function onDragMove(p){
   resX -= dir[0]*done; resY -= dir[1]*done;
   if(done < n){
     resX = 0; resY = 0;
-    if(drag && !drag.blockHint){ drag.blockHint = true; hintLine('这个方向走不了，换个方向试试'); }
+    if(drag && !drag.blockHint){ drag.blockHint = true; hintLine('往「'+(DIR_NAME[dir[0]+','+dir[1]]||'该')+'」走不了，换个方向试试'); }
   }
 }
 function endDrag(){ drag=null; resX=0; resY=0; }
@@ -344,6 +455,15 @@ document.querySelectorAll('#dpad button[data-d]').forEach(b=>{
 $('btnUndo').onclick = undo;
 $('btnReset').onclick = reset;
 $('btnAgain').onclick = reset;
+$('btnPrev').onclick = () => gotoLevel(levelIndex - 1);
+$('btnNext').onclick = () => {
+  if(!isUnlocked(levelIndex + 1)){ hintLine('先通关本关，解锁下一关'); return; }
+  gotoLevel(levelIndex + 1);
+};
+$('btnNextLevel').onclick = () => {
+  if(!isUnlocked(levelIndex + 1)) return;
+  gotoLevel(levelIndex + 1);
+};
 
 /* ================= 提示（BFS 求解器） ================= */
 function hintLine(t){ $('hintLine').textContent = t; }
@@ -404,6 +524,7 @@ function sizeBoard(){
   sizeBoard();
   window.addEventListener('resize', sizeBoard);
   if(window.visualViewport) window.visualViewport.addEventListener('resize', sizeBoard);
+  setLevel(0);      // 载入第 1 关
   reset();          // 每次打开都从初始局面开始，状态全部初始化（不再恢复存档，避免隐患）
 })();
 </script>
