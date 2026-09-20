@@ -5,6 +5,7 @@
 const LEVELS = [
   {
     "id": "level-1",
+    "theme": "stone",
     "name": "第1关 · 蓝块出逃",
     "goal": [
       1,
@@ -168,6 +169,7 @@ const LEVELS = [
   },
   {
     "id": "level-2",
+    "theme": "jelly",
     "name": "第2关 · 蓝块居中逃",
     "goal": [
       1,
@@ -331,6 +333,7 @@ const LEVELS = [
   },
   {
     "id": "level-3",
+    "theme": "glass",
     "name": "第3关 · 红三角出逃",
     "goal": [
       1,
@@ -494,6 +497,7 @@ const LEVELS = [
   },
   {
     "id": "level-4",
+    "theme": "animal",
     "name": "第4关 · 黄块侧逃",
     "goal": [
       0,
@@ -657,6 +661,7 @@ const LEVELS = [
   },
   {
     "id": "level-5",
+    "theme": "fire",
     "name": "第5关 · 绿块大逃",
     "goal": [
       0,
@@ -820,6 +825,7 @@ const LEVELS = [
   },
   {
     "id": "level-6",
+    "theme": "crystal",
     "name": "第6关 · 小紫角逃",
     "goal": [
       2,
@@ -983,6 +989,7 @@ const LEVELS = [
   },
   {
     "id": "level-7",
+    "theme": "wood",
     "name": "第7关 · 粉块角逃",
     "goal": [
       2,

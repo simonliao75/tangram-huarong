@@ -4,6 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>七巧板华容道</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=ZCOOL+KuaiLe&family=Baloo+2:wght@600;800&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  // 关闭 preflight，避免重置已有的 SVG 棋盘 / 主题 / 吉祥物样式，只把 Tailwind 当"外壳皮肤"用
+  tailwind.config = { corePlugins: { preflight: false } };
+</script>
 <script>
   // 全局错误兜底：任何脚本错误都显示到提示行，避免出现"棋盘空白但没有任何提示"的静默失败。
   // 必须放在最前面，才能捕获后续 <script> 的解析期语法错误。
@@ -27,10 +35,11 @@
 <style>
   :root { --bg:#F5F3EE; --ink:#222; }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  button { font-family: inherit; border: 0; }
   html, body { margin:0; padding:0; height:100%; }
   body {
     background: var(--bg); color: var(--ink);
-    font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-family: "ZCOOL KuaiLe", "Baloo 2", -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
     display:flex; flex-direction:column; align-items:center; min-height:100%;
     min-height:100vh; min-height:100dvh;
     user-select:none; -webkit-user-select:none;
@@ -40,8 +49,6 @@
   header { width:100%; display:flex; align-items:center; justify-content:space-between; }
   h1 { font-size:18px; margin:0; letter-spacing:.5px; }
   .hud { display:flex; gap:10px; font-variant-numeric: tabular-nums; }
-  .hud .box { background:#fff; border:1px solid #ddd; border-radius:8px; padding:4px 10px; font-size:13px; }
-  .hud .box b { font-size:15px; margin-left:3px; }
   .title .sub { font-size:12px; color:#888; margin-top:2px; }
   .title .progress { color:#CAAC33; font-size:12px; letter-spacing:1px; }
   .title .level-badge {
@@ -59,8 +66,14 @@
   }
   .sel { stroke:#0a84ff !important; stroke-width:.06 !important; filter:drop-shadow(0 0 4px #0a84ff); }
   .hintpiece { stroke:#ff8c00 !important; stroke-width:.06 !important; filter:drop-shadow(0 0 5px #ff8c00); }
-  .shake { animation: shake .28s; }
-  @keyframes shake { 0%,100%{transform:translate(0,0)} 25%{transform:translate(7px,0)} 50%{transform:translate(-7px,0)} 75%{transform:translate(4px,0)} }
+  /* 移动失败：朝受阻方向轻撞回弹 + 红色高亮（按 SVG 用户单位位移，约 0.12 格） */
+  .piece-bump { animation: bump .32s cubic-bezier(.36,.07,.19,.97); transform-box: fill-box; }
+  @keyframes bump {
+    0%   { transform: translate(0,0); }
+    30%  { transform: translate(var(--bx,0), var(--by,0)); }
+    65%  { transform: translate(calc(var(--bx,0) * -0.3), calc(var(--by,0) * -0.3)); }
+    100% { transform: translate(0,0); }
+  }
   .goal-flash { animation: goalflash 1s ease-in-out 3; }
   @keyframes goalflash {
     0%,100% { filter:none; stroke:#3A3A3A; }
@@ -79,12 +92,7 @@
   .combo-banner.ultra { background:linear-gradient(135deg,#9C27B0,#E23B2E); box-shadow:0 3px 16px rgba(156,39,176,.55); animation:comboPop .6s cubic-bezier(.2,1.6,.4,1), comboTilt 1.2s ease-in-out infinite; }
   @keyframes comboTilt { 0%,100%{transform:scale(1) rotate(-1.5deg)} 50%{transform:scale(1.05) rotate(1.5deg)} }
   .controls { width:100%; display:flex; gap:8px; justify-content:center; flex-wrap:wrap; }
-  button.ctrl {
-    background:#fff; border:1px solid #ccc; border-radius:9px; padding:9px 14px;
-    font-size:14px; cursor:pointer; color:#333; min-width:74px;
-  }
-  button.ctrl:active { background:#eee; }
-  button.primary { background:#327C99; border-color:#327C99; color:#fff; }
+  /* 按钮皮肤改由 Tailwind 工具类提供（见 HTML 中的 class）；此处仅保留禁用态 */
   /* 重新闯关：危险操作，单独成行，红系样式与常规按钮区分 */
   .restart-zone { width:100%; display:flex; justify-content:center; margin-top:10px; }
   button.ctrl.danger { background:#fff; border:1px solid #E23B2E; color:#E23B2E; }
@@ -98,75 +106,224 @@
   .confirm-actions { display:flex; gap:10px; justify-content:center; margin-top:16px; }
   #dpad { display:grid; grid-template-columns:repeat(3, 46px); grid-template-rows:repeat(3, 46px);
           gap:5px; justify-content:center; margin:2px 0; }
-  #dpad button { background:#fff; border:1px solid #ccc; border-radius:10px; font-size:20px;
-                 cursor:pointer; display:flex; align-items:center; justify-content:center; }
-  #dpad button:active { background:#dbeafe; }
+  /* 方向键皮肤改由 Tailwind 工具类提供 */
   #dpad .mid { background:#f0f0f0; border-style:dashed; font-size:12px; color:#999; cursor:default; }
   #result { position:fixed; inset:0; background:rgba(0,0,0,.42); display:none;
             align-items:center; justify-content:center; z-index:20; }
   #result.show { display:flex; }
-  .card { background:#fff; border-radius:16px; padding:26px 30px; text-align:center;
-          box-shadow:0 10px 40px rgba(0,0,0,.25); max-width:86vw; }
+  .card { max-width:86vw; }
+  /* 卡片皮肤改由 Tailwind 工具类提供（见 HTML class）；h2/stars/meta 排版保留 */
   .card h2 { margin:0 0 6px; font-size:22px; color:#327C99; }
   .stars { font-size:34px; letter-spacing:4px; margin:6px 0; }
   .card .meta { font-size:14px; color:#555; margin:2px 0; }
   .card button { margin-top:16px; }
   @media (max-width:420px){ h1{font-size:16px} .hud .box{font-size:12px} }
+
+  /* ============ 小吉祥物「小七」 ============ */
+  .mascot-row { width:100%; display:flex; align-items:center; gap:10px; }
+  .mascot { width:42px; height:42px; flex:0 0 auto; transform-origin:center; }
+  .mascot .m-body { fill:#FFB300; stroke:#E08500; stroke-width:3; }
+  .mascot .m-eyes-idle circle { fill:#3A2A00; }
+  .mascot .m-eyes-happy path { stroke:#3A2A00; stroke-width:3.6; fill:none; stroke-linecap:round; }
+  .mascot .m-mouth-smile, .mascot .m-mouth-open, .mascot .m-mouth-think { stroke:#3A2A00; stroke-width:3.2; fill:none; stroke-linecap:round; }
+  .mascot .m-mouth-open { fill:#7A4A12; }
+  /* 默认显示 idle 表情，隐藏其它 */
+  .mascot .m-eyes-happy, .mascot .m-mouth-open, .mascot .m-mouth-think { display:none; }
+  .mascot.happy .m-eyes-idle, .mascot.happy .m-mouth-smile, .mascot.happy .m-mouth-think { display:none; }
+  .mascot.happy .m-eyes-happy, .mascot.happy .m-mouth-open { display:inline; }
+  .mascot.think .m-mouth-smile, .mascot.think .m-mouth-open { display:none; }
+  .mascot.think .m-mouth-think { display:inline; }
+  .mascot.idle  { animation: mBob 2.4s ease-in-out infinite; }
+  .mascot.happy { animation: mJump .6s ease; }
+  .mascot.think { animation: mTilt 1.3s ease-in-out infinite; }
+  @keyframes mBob  { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-3px)} }
+  @keyframes mJump { 0%{transform:translateY(0) scale(1)} 40%{transform:translateY(-9px) scale(1.12)} 100%{transform:translateY(0) scale(1)} }
+  @keyframes mTilt { 0%,100%{transform:rotate(-7deg)} 50%{transform:rotate(7deg)} }
+
+  /* ============ 主题皮肤动效 ============ */
+  .pieces.theme-jelly { transform-box:fill-box; transform-origin:center; animation: jellyFloat 2.6s ease-in-out infinite; }
+  @keyframes jellyFloat { 0%,100%{transform:scale(1)} 50%{transform:scale(1.018)} }
+  .pieces.theme-fire  { transform-box:fill-box; transform-origin:center; animation: firePulse 1.8s ease-in-out infinite; }
+  @keyframes firePulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.02)} }
+  .pieces.theme-crystal { transform-box:fill-box; transform-origin:center; animation: crystalShine 3.2s ease-in-out infinite; }
+  @keyframes crystalShine { 0%,100%{opacity:.92} 50%{opacity:1} }
+  /* 棋子统一投影：增强立体质感 */
+  .pieces { filter: drop-shadow(0 2px 3px rgba(0,0,0,0.18)); }
+  .pieces.theme-glass { transform-box:fill-box; transform-origin:center; animation: glassShine 3s ease-in-out infinite; }
+  @keyframes glassShine { 0%,100%{opacity:.9} 50%{opacity:1} }
+
+  /* ============ 胜利卡片弹跳 + 撒花 ============ */
+  .card { animation: winPop .55s cubic-bezier(.2,1.6,.4,1); }
+  @keyframes winPop { 0%{transform:scale(.4);opacity:0} 60%{transform:scale(1.08)} 100%{transform:scale(1);opacity:1} }
+  #confetti { position:fixed; inset:0; pointer-events:none; overflow:hidden; z-index:25; }
+  .confetti-piece { position:absolute; top:-24px; opacity:.95; animation-name:confFall; animation-timing-function:linear; animation-fill-mode:forwards; }
+  @keyframes confFall { to { transform:translateY(112vh) rotate(760deg); opacity:.85; } }
 </style>
 </head>
 <body>
 <div id="app">
-  <header>
+  <header class="w-full flex items-center justify-between gap-3">
     <div class="title">
-      <h1>七巧板华容道</h1>
+      <h1 class="text-2xl font-extrabold tracking-wide text-slate-800 drop-shadow-sm">七巧板华容道</h1>
       <div><span class="level-badge" id="levelName">第1关 · 蓝块出逃</span></div>
       <div class="sub progress" id="levelProgress"></div>
     </div>
     <div class="hud">
-      <span class="box">⏱<b id="timer">00:00</b></span>
-      <span class="box">步数 <b id="moves">0</b><span style="color:#999"> / <span id="optimal">13</span></span></span>
-      <span class="box">💡<b id="hintCount">0</b></span>
+      <span class="box inline-flex items-center gap-1 rounded-full bg-white/90 shadow-md ring-1 ring-black/5 px-3 py-1 text-sm font-semibold text-slate-700">⏱<b id="timer">00:00</b></span>
+      <span class="box inline-flex items-center gap-1 rounded-full bg-white/90 shadow-md ring-1 ring-black/5 px-3 py-1 text-sm font-semibold text-slate-700">步数 <b id="moves">0</b><span style="color:#999"> / <span id="optimal">13</span></span></span>
+      <span class="box inline-flex items-center gap-1 rounded-full bg-white/90 shadow-md ring-1 ring-black/5 px-3 py-1 text-sm font-semibold text-slate-700">💡<b id="hintCount">0</b></span>
     </div>
   </header>
-  <div class="hint-line" id="hintLine">把蓝色方块移到底部正中的蓝框（出口）｜按住棋子拖动，或点选后用方向键/Q E Z C/方向盘</div>
+  <div class="mascot-row">
+    <svg id="mascot" class="mascot idle" viewBox="0 0 64 64" aria-hidden="true">
+      <rect class="m-body" x="10" y="10" width="44" height="44" rx="13"/>
+      <rect x="10" y="10" width="44" height="44" rx="13" fill="rgba(255,255,255,0.18)"/>
+      <g class="m-eyes-idle"><circle cx="24" cy="29" r="4"/><circle cx="40" cy="29" r="4"/></g>
+      <g class="m-eyes-happy"><path d="M20 31 Q24 25 28 31"/><path d="M36 31 Q40 25 44 31"/></g>
+      <path class="m-mouth-smile" d="M23 40 Q32 48 41 40"/>
+      <path class="m-mouth-open" d="M22 38 Q32 54 42 38 Q32 47 22 38"/>
+      <path class="m-mouth-think" d="M26 43 Q32 45 38 42"/>
+    </svg>
+    <div class="hint-line rounded-2xl bg-white/85 shadow-sm ring-1 ring-black/5 px-4 py-2 text-slate-600" id="hintLine">把蓝色方块移到底部正中的蓝框（出口）｜按住棋子拖动，或点选后用方向键/Q E Z C/方向盘</div>
+  </div>
   <svg id="board" viewBox="0 0 3 3" xmlns="http://www.w3.org/2000/svg"></svg>
   <div id="dpad">
-    <button data-d="-1,1" title="左上">↖</button><button data-d="0,1" title="上">↑</button><button data-d="1,1" title="右上">↗</button>
-    <button data-d="-1,0" title="左">←</button><button class="mid">·</button><button data-d="1,0" title="右">→</button>
-    <button data-d="-1,-1" title="左下">↙</button><button data-d="0,-1" title="下">↓</button><button data-d="1,-1" title="右下">↘</button>
+    <button data-d="-1,1" title="左上" class="rounded-xl shadow-sm bg-white ring-1 ring-black/5 text-slate-700 text-2xl cursor-pointer flex items-center justify-center active:scale-95 active:bg-sky-100 transition">↖</button><button data-d="0,1" title="上" class="rounded-xl shadow-sm bg-white ring-1 ring-black/5 text-slate-700 text-2xl cursor-pointer flex items-center justify-center active:scale-95 active:bg-sky-100 transition">↑</button><button data-d="1,1" title="右上" class="rounded-xl shadow-sm bg-white ring-1 ring-black/5 text-slate-700 text-2xl cursor-pointer flex items-center justify-center active:scale-95 active:bg-sky-100 transition">↗</button>
+    <button data-d="-1,0" title="左" class="rounded-xl shadow-sm bg-white ring-1 ring-black/5 text-slate-700 text-2xl cursor-pointer flex items-center justify-center active:scale-95 active:bg-sky-100 transition">←</button><button class="mid">·</button><button data-d="1,0" title="右" class="rounded-xl shadow-sm bg-white ring-1 ring-black/5 text-slate-700 text-2xl cursor-pointer flex items-center justify-center active:scale-95 active:bg-sky-100 transition">→</button>
+    <button data-d="-1,-1" title="左下" class="rounded-xl shadow-sm bg-white ring-1 ring-black/5 text-slate-700 text-2xl cursor-pointer flex items-center justify-center active:scale-95 active:bg-sky-100 transition">↙</button><button data-d="0,-1" title="下" class="rounded-xl shadow-sm bg-white ring-1 ring-black/5 text-slate-700 text-2xl cursor-pointer flex items-center justify-center active:scale-95 active:bg-sky-100 transition">↓</button><button data-d="1,-1" title="右下" class="rounded-xl shadow-sm bg-white ring-1 ring-black/5 text-slate-700 text-2xl cursor-pointer flex items-center justify-center active:scale-95 active:bg-sky-100 transition">↘</button>
   </div>
   <div class="controls">
-    <button class="ctrl" id="btnUndo">↩ 撤销</button>
-    <button class="ctrl" id="btnReset">🔄 重开</button>
-    <button class="ctrl" id="btnHint">💡 提示</button>
-    <button class="ctrl" id="btnPrev">‹ 上一关</button>
-    <button class="ctrl" id="btnNext">下一关 ›</button>
+    <button class="ctrl rounded-2xl shadow-md bg-white ring-1 ring-black/5 px-4 py-2.5 text-base font-bold text-slate-700 active:scale-95 active:bg-slate-100 transition" id="btnUndo">↩ 撤销</button>
+    <button class="ctrl rounded-2xl shadow-md bg-white ring-1 ring-black/5 px-4 py-2.5 text-base font-bold text-slate-700 active:scale-95 active:bg-slate-100 transition" id="btnReset">🔄 重开</button>
+    <button class="ctrl rounded-2xl shadow-md bg-white ring-1 ring-black/5 px-4 py-2.5 text-base font-bold text-slate-700 active:scale-95 active:bg-slate-100 transition" id="btnHint">💡 提示</button>
+    <button class="ctrl rounded-2xl shadow-md bg-white ring-1 ring-black/5 px-4 py-2.5 text-base font-bold text-slate-700 active:scale-95 active:bg-slate-100 transition" id="btnPrev">‹ 上一关</button>
+    <button class="ctrl rounded-2xl shadow-md bg-white ring-1 ring-black/5 px-4 py-2.5 text-base font-bold text-slate-700 active:scale-95 active:bg-slate-100 transition" id="btnNext">下一关 ›</button>
   </div>
   <div class="restart-zone">
     <button class="ctrl danger" id="btnRestart">🏁 重新闯关</button>
   </div>
 </div>
 
-<div id="result"><div class="card">
+<div id="result"><div class="card rounded-3xl shadow-2xl bg-white px-8 py-7 text-center">
   <h2>🎉 过关！</h2>
   <div class="stars" id="resStars">★★★</div>
   <div class="meta" id="resMeta"></div>
   <div class="combo-banner" id="comboBanner"></div>
-  <button class="ctrl primary" id="btnAgain">再玩一次</button>
-  <button class="ctrl primary" id="btnNextLevel" style="display:none">下一关 ›</button>
+  <button class="ctrl primary rounded-2xl bg-gradient-to-r from-sky-500 to-indigo-500 text-white shadow-lg px-5 py-2.5 font-bold active:scale-95 transition" id="btnAgain">再玩一次</button>
+  <button class="ctrl primary rounded-2xl bg-gradient-to-r from-sky-500 to-indigo-500 text-white shadow-lg px-5 py-2.5 font-bold active:scale-95 transition" id="btnNextLevel" style="display:none">下一关 ›</button>
 </div></div>
 
 <div id="confirm" class="confirm">
-  <div class="card confirm-card">
+  <div class="card confirm-card rounded-3xl shadow-2xl bg-white px-8 py-7 text-center">
     <h2>⚠️ 重新闯关？</h2>
     <div class="meta">将清空所有关卡进度与星级，从第一关重新开始。<br>此操作不可撤销。</div>
     <div class="confirm-actions">
-      <button class="ctrl" id="btnCancelRestart">取消</button>
+      <button class="ctrl rounded-2xl shadow-md bg-white ring-1 ring-black/5 px-5 py-2.5 font-bold text-slate-700 active:scale-95 transition" id="btnCancelRestart">取消</button>
       <button class="ctrl danger" id="btnConfirmRestart">确认重置</button>
     </div>
   </div>
 </div>
 
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <!-- 石头：粗糙边缘 + 颗粒质感 -->
+    <filter id="f-stone" x="-20%" y="-20%" width="140%" height="140%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.12" numOctaves="3" seed="7" result="n"/>
+      <feDisplacementMap in="SourceGraphic" in2="n" scale="0.045" xChannelSelector="R" yChannelSelector="G" result="disp"/>
+      <feTurbulence type="fractalNoise" baseFrequency="0.55" numOctaves="2" seed="4" result="g"/>
+      <feColorMatrix in="g" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.16 0" result="grain"/>
+      <feComposite in="grain" in2="disp" operator="in" result="gc"/>
+      <feMerge><feMergeNode in="disp"/><feMergeNode in="gc"/></feMerge>
+    </filter>
+    <!-- 果冻：清脆半透明 + 高光（Q弹感） -->
+    <filter id="f-jelly" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="0.012" result="b"/>
+      <feSpecularLighting in="b" surfaceScale="2.4" specularConstant="0.9" specularExponent="18" lighting-color="#ffffff" result="spec">
+        <fePointLight x="-0.6" y="-1.2" z="1.6"/>
+      </feSpecularLighting>
+      <feComposite in="spec" in2="SourceGraphic" operator="in" result="specClip"/>
+      <feMerge><feMergeNode in="SourceGraphic"/><feMergeNode in="specClip"/></feMerge>
+    </filter>
+    <!-- 玻璃：清晰边缘 + 强高光（不做模糊，解决边界模糊） -->
+    <filter id="f-glass" x="-20%" y="-20%" width="140%" height="140%">
+      <feSpecularLighting in="SourceAlpha" surfaceScale="3" specularConstant="1.1" specularExponent="24" lighting-color="#ffffff" result="spec">
+        <fePointLight x="-0.8" y="-1.4" z="1.4"/>
+      </feSpecularLighting>
+      <feComposite in="spec" in2="SourceGraphic" operator="in" result="specClip"/>
+      <feMerge><feMergeNode in="SourceGraphic"/><feMergeNode in="specClip"/></feMerge>
+    </filter>
+    <!-- 动物：柔和皮毛颗粒 -->
+    <filter id="f-animal" x="-20%" y="-20%" width="140%" height="140%">
+      <feTurbulence type="turbulence" baseFrequency="0.4" numOctaves="2" seed="9" result="g"/>
+      <feColorMatrix in="g" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.1 0" result="grain"/>
+      <feComposite in="grain" in2="SourceGraphic" operator="in" result="gc"/>
+      <feMerge><feMergeNode in="SourceGraphic"/><feMergeNode in="gc"/></feMerge>
+    </filter>
+    <!-- 火焰：外发光 + 熔融高光 -->
+    <filter id="f-fire" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="0.04" result="b"/>
+      <feSpecularLighting in="SourceAlpha" surfaceScale="2" specularConstant="0.7" specularExponent="16" lighting-color="#fff1c0" result="spec">
+        <fePointLight x="0.5" y="-1" z="1.2"/>
+      </feSpecularLighting>
+      <feComposite in="spec" in2="SourceGraphic" operator="in" result="specClip"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/><feMergeNode in="specClip"/></feMerge>
+    </filter>
+    <!-- 水晶：外发光 + 切面高光 -->
+    <filter id="f-crystal" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="0.05" result="b"/>
+      <feSpecularLighting in="SourceAlpha" surfaceScale="2.6" specularConstant="1" specularExponent="22" lighting-color="#eaffff" result="spec">
+        <fePointLight x="-0.8" y="-1.4" z="1.6"/>
+      </feSpecularLighting>
+      <feComposite in="spec" in2="SourceGraphic" operator="in" result="specClip"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/><feMergeNode in="specClip"/></feMerge>
+    </filter>
+    <!-- 木头：木纹条状颗粒 -->
+    <filter id="f-wood" x="-20%" y="-20%" width="140%" height="140%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.018 0.13" numOctaves="4" seed="3" result="n"/>
+      <feColorMatrix in="n" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.22 0" result="grain"/>
+      <feComposite in="grain" in2="SourceGraphic" operator="in" result="gc"/>
+      <feMerge><feMergeNode in="SourceGraphic"/><feMergeNode in="gc"/></feMerge>
+    </filter>
+
+    <!-- ===== 各主题内部纹理（叠加在棋子上，让材质更直观） ===== -->
+    <pattern id="p-stone" patternUnits="userSpaceOnUse" width="0.3" height="0.3">
+      <circle cx="0.06" cy="0.08" r="0.013" fill="#2b2b2b" opacity="0.18"/>
+      <circle cx="0.21" cy="0.05" r="0.009" fill="#2b2b2b" opacity="0.15"/>
+      <circle cx="0.12" cy="0.23" r="0.011" fill="#2b2b2b" opacity="0.16"/>
+      <circle cx="0.26" cy="0.19" r="0.008" fill="#2b2b2b" opacity="0.14"/>
+      <path d="M0.02 0.16 L0.1 0.19 M0.22 0.27 L0.29 0.3" stroke="#2b2b2b" stroke-width="0.006" opacity="0.12" fill="none"/>
+    </pattern>
+    <pattern id="p-jelly" patternUnits="userSpaceOnUse" width="0.28" height="0.28">
+      <circle cx="0.07" cy="0.06" r="0.032" fill="#ffffff" opacity="0.55"/>
+      <circle cx="0.21" cy="0.2" r="0.014" fill="#ffffff" opacity="0.4"/>
+      <circle cx="0.12" cy="0.23" r="0.009" fill="#ffffff" opacity="0.35"/>
+    </pattern>
+    <pattern id="p-glass" patternUnits="userSpaceOnUse" width="0.32" height="0.32">
+      <path d="M-0.06 0.27 L0.27 -0.06" stroke="#ffffff" stroke-width="0.055" opacity="0.4" fill="none"/>
+      <circle cx="0.24" cy="0.1" r="0.03" fill="#ffffff" opacity="0.45"/>
+    </pattern>
+    <pattern id="p-animal" patternUnits="userSpaceOnUse" width="0.3" height="0.3">
+      <circle cx="0.1" cy="0.1" r="0.032" fill="#3a2410" opacity="0.2"/>
+      <circle cx="0.25" cy="0.23" r="0.026" fill="#3a2410" opacity="0.16"/>
+      <path d="M0.02 0.28 Q0.15 0.2 0.3 0.26" stroke="#3a2410" stroke-width="0.012" opacity="0.18" fill="none"/>
+    </pattern>
+    <pattern id="p-fire" patternUnits="userSpaceOnUse" width="0.3" height="0.32">
+      <path d="M0.15 0.02 Q0.22 0.13 0.15 0.22 Q0.08 0.13 0.15 0.02 Z" fill="#fff3c0" opacity="0.3"/>
+      <path d="M0.25 0.18 Q0.29 0.26 0.25 0.32" stroke="#fff3c0" stroke-width="0.012" opacity="0.32" fill="none"/>
+      <path d="M0.07 0.2 Q0.04 0.27 0.07 0.31" stroke="#fff3c0" stroke-width="0.01" opacity="0.28" fill="none"/>
+    </pattern>
+    <pattern id="p-crystal" patternUnits="userSpaceOnUse" width="0.3" height="0.3">
+      <path d="M0.15 0.03 L0.21 0.15 L0.15 0.27 L0.09 0.15 Z" fill="#ffffff" opacity="0.22"/>
+      <path d="M0.02 0.09 L0.1 0.13 M0.28 0.2 L0.2 0.16 M0.02 0.22 L0.09 0.18" stroke="#ffffff" stroke-width="0.008" opacity="0.3" fill="none"/>
+    </pattern>
+    <pattern id="p-wood" patternUnits="userSpaceOnUse" width="0.34" height="0.18">
+      <path d="M0 0.03 Q0.17 0.06 0.34 0.03" stroke="#3a2410" stroke-width="0.011" fill="none" opacity="0.26"/>
+      <path d="M0 0.1 Q0.17 0.13 0.34 0.1" stroke="#3a2410" stroke-width="0.013" fill="none" opacity="0.32"/>
+      <path d="M0 0.15 Q0.17 0.12 0.34 0.15" stroke="#3a2410" stroke-width="0.009" fill="none" opacity="0.22"/>
+      <circle cx="0.26" cy="0.09" r="0.018" fill="none" stroke="#3a2410" stroke-width="0.01" opacity="0.3"/>
+    </pattern>
+  </defs>
+</svg>
 <script src="pages/index/levels.js"></script>
 <script>
 "use strict";
@@ -177,6 +334,50 @@ const DIR_NAME = {"1,0":"右","-1,0":"左","0,1":"上","0,-1":"下","1,1":"右�
 const LEVELS = window.LEVELS;      // 由 <script src="pages/index/levels.js"> 提供（与小程序端共用同一份数据）
 if(!LEVELS || !LEVELS.length) throw new Error('关卡数据未加载：请确认 index.html 同目录下的 pages/index/levels.js 可访问');
 let levelIndex = 0, LEVEL = LEVELS[0], GOAL = LEVEL.goal.slice(), optimal = LEVEL.optimal;
+
+/* ================= 主题皮肤（每关一套：石头/果冻/云朵/动物/火焰/水晶/木头） ================= */
+const THEMES = {
+  _default: { bg:'#fff', palette:null, stroke:'#3A3A3A', sw:0.012, join:'round', accent:'#FFB300' },
+  stone:  { bg:'#DDE3E6', palette:{tri_large:'#7C8A93',tri_small_a:'#9AA7AE',square:'#5F6B72',tri_medium:'#8B979E',tri_small_b:'#AEB9BE',para:'#6E7A82'}, stroke:'#3A3A3A', sw:0.012, join:'miter', filter:'f-stone', accent:'#7C8A93' },
+  jelly:  { bg:'#FFF0F6', palette:{tri_large:'#FF6F91',tri_small_a:'#6FD3FF',square:'#FFD166',tri_medium:'#8AE0A0',tri_small_b:'#C792FF',para:'#FF9F6B'}, stroke:'#ffffff', sw:0.01, join:'round', opacity:0.92, filter:'f-jelly', accent:'#FF6F91' },
+  glass:  { bg:'#EAF6FB', palette:{tri_large:'#BFE9F2',tri_small_a:'#D7C9F2',square:'#D6F2FA',tri_medium:'#C9F2E0',tri_small_b:'#F2D9EC',para:'#C9E6F2'}, stroke:'#ffffff', sw:0.01, join:'round', opacity:0.8, filter:'f-glass', accent:'#9FD9E6' },
+  animal: { bg:'#FFF6E9', palette:{tri_large:'#F4A23B',tri_small_a:'#7BC6A0',square:'#6FB1E0',tri_medium:'#EF6F6F',tri_small_b:'#B58BE0',para:'#F2C45A'}, stroke:'#5A3A1E', sw:0.012, join:'round', filter:'f-animal', accent:'#F4A23B' },
+  fire:   { bg:'#2A1A12', palette:{tri_large:'#FF7A3D',tri_small_a:'#FFB13D',square:'#FF4D4D',tri_medium:'#FF9A3D',tri_small_b:'#FFC23D',para:'#FF5E3A'}, stroke:'#FFD9A0', sw:0.01, join:'round', filter:'f-fire', accent:'#FF7A3D' },
+  crystal:{ bg:'#101D2E', palette:{tri_large:'#5FD0E0',tri_small_a:'#7FB8FF',square:'#B38BFF',tri_medium:'#6FE0C8',tri_small_b:'#9AD7FF',para:'#5FA8E0'}, stroke:'#E6FBFF', sw:0.008, join:'round', opacity:0.88, filter:'f-crystal', accent:'#5FD0E0' },
+  wood:   { bg:'#EFE2CE', palette:{tri_large:'#B5783F',tri_small_a:'#C68A4E',square:'#8F5A2E',tri_medium:'#A86A38',tri_small_b:'#CE9456',para:'#9C6334'}, stroke:'#5A3A1E', sw:0.012, join:'miter', filter:'f-wood', accent:'#B5783F' }
+};
+function themeOf(){ return THEMES[LEVEL.theme] || THEMES._default; }
+function applyThemeChrome(){
+  const b = document.querySelector('#mascot .m-body');
+  if(b) b.style.fill = themeOf().accent;   // 吉祥物身体随主题变色
+}
+function mascotMood(m){
+  const el = $('mascot'); if(!el) return;
+  el.classList.remove('idle','happy','think');
+  el.classList.add(m);
+}
+function spawnConfetti(){
+  let box = document.getElementById('confetti');
+  if(!box){ box = document.createElement('div'); box.id = 'confetti'; document.body.appendChild(box); }
+  const colors = ['#FF6F91','#FFD166','#6FD3FF','#8AE0A0','#C792FF','#FF9F6B','#FF4D4D','#5FD0E0'];
+  const frag = document.createDocumentFragment();
+  for(let i=0;i<42;i++){
+    const c = document.createElement('div');
+    c.className = 'confetti-piece';
+    const size = 7 + Math.random()*7;
+    c.style.left = (Math.random()*100) + '%';
+    c.style.width = size + 'px';
+    c.style.height = (size*1.4) + 'px';
+    c.style.background = colors[i % colors.length];
+    c.style.animationDuration = (1.6 + Math.random()*1.6) + 's';
+    c.style.animationDelay = (Math.random()*0.6) + 's';
+    c.style.borderRadius = (Math.random() < 0.5) ? '2px' : '50%';
+    frag.appendChild(c);
+  }
+  box.appendChild(frag);
+  setTimeout(() => { if(box) box.innerHTML = ''; }, 3500);
+}
+
 
 /* ================= 状态 ================= */
 let pieces = null, moves = 0, won = false, selected = null, undoStack = [], t0 = null, timerHandle = null;
@@ -191,6 +392,7 @@ function setLevel(idx){
   $('optimal').textContent = optimal;
   updateNav();
   updateProgress();
+  applyThemeChrome();
 }
 function gotoLevel(idx){ setLevel(idx); reset(); }
 function restartAdventure(){
@@ -265,6 +467,7 @@ function reset() {
   hintLine('把【'+gn+'】移到虚线框（出口）｜按住棋子拖动，或点选后用方向键/Q E Z C/方向盘');
   render();
   flashGoal();      // 每关开始闪烁提示目标块
+  mascotMood('idle');
 }
 
 /* ================= 几何 ================= */
@@ -321,7 +524,7 @@ function tryMove(id, dx, dy){
   if(won) return false;
   const i = pieces.findIndex(p=>p.id===id); if(i<0) return false;
   const cur = offsets();
-  if(!canPlace(cur, i, cur[i][0]+dx, cur[i][1]+dy)){ shake(id); return false; }
+  if(!canPlace(cur, i, cur[i][0]+dx, cur[i][1]+dy)){ bumpFail(id, dx, dy); return false; }
   undoStack.push(cur);
   pieces[i].offset = [cur[i][0]+dx, cur[i][1]+dy];
   if(!t0){ t0 = Date.now(); startTimer(); }
@@ -341,9 +544,26 @@ function undo(){
   render();
 }
 
-function shake(id){
-  const el = svg.querySelector('[data-id="'+id+'"]'); if(!el) return;
-  el.classList.remove('shake'); void el.offsetWidth; el.classList.add('shake');
+function bumpFail(id, dx, dy){
+  const els = svg.querySelectorAll('polygon[data-id="'+id+'"]'); if(!els.length) return;
+  const amp = 0.12;   // SVG 用户单位（棋盘 3 格），约 4% 盘宽，幅度刚好"撞一下"
+  els.forEach(el=>{
+    el.style.setProperty('--bx', (dx*amp).toFixed(3)+'px');
+    el.style.setProperty('--by', (dy*amp).toFixed(3)+'px');
+    el.classList.remove('piece-bump');
+    try { el.getBBox(); } catch(_){}          // 强制回流以重启动画
+    el.classList.add('piece-bump');
+  });
+  const base = els[0];
+  const prevStroke = base.getAttribute('stroke');
+  const prevSw = base.getAttribute('stroke-width');
+  base.setAttribute('stroke', '#FF3B30');
+  base.setAttribute('stroke-width', '0.03');
+  clearTimeout(base._bumpT);
+  base._bumpT = setTimeout(function(){
+    els.forEach(el=> el.classList.remove('piece-bump'));
+    try { base.setAttribute('stroke', prevStroke); base.setAttribute('stroke-width', prevSw); } catch(_){}
+  }, 320);
 }
 
 /* ================= 计时 / 胜利 ================= */
@@ -371,6 +591,11 @@ function win(){
   saveBest(moves, timeMs, stars);
   updateProgress();
   updateNav();      // 通关后解锁下一关，刷新按钮状态
+
+  // 胜利庆祝：撒花 + 吉祥物欢呼
+  spawnConfetti();
+  mascotMood('happy');
+  setTimeout(() => mascotMood('idle'), 2600);
 
   // 连击彩蛋：3 星累加连击，否则清零
   let combo = loadCombo();
@@ -418,13 +643,20 @@ function renderHintCount(){ const el = $('hintCount'); if(el) el.textContent = l
 function render(){
   const gp = pieces.find(p=>p.goal);          // 出口 = 目标块形状在 GOAL 位置的虚线轮廓
   const exitPts = gp ? worldOf({poly:gp.poly}, GOAL[0], GOAL[1]).map(([x,y])=>x.toFixed(3)+','+y.toFixed(3)).join(' ') : '';
+  const T = themeOf();
   svg.innerHTML =
     '<g transform="matrix(1 0 0 -1 0 3)">' +
-      '<rect x="0" y="0" width="3" height="3" fill="#fff" stroke="#222" stroke-width="0.03"/>' +
+      '<rect x="0" y="0" width="3" height="3" fill="'+T.bg+'" stroke="#222" stroke-width="0.03"/>' +
+      '<g class="pieces theme-'+LEVEL.theme+'">' +
       pieces.map(p=>{
         const pts = worldOf(p).map(([x,y])=>x.toFixed(3)+','+y.toFixed(3)).join(' ');
-        return '<polygon data-id="'+p.id+'" points="'+pts+'" fill="'+p.color+'" stroke="#3A3A3A" stroke-width="'+(p.goal?0.02:0.012)+'" stroke-linejoin="round"><title>'+p.name+'</title></polygon>';
+        const fill = (T.palette && T.palette[p.id]) || p.color;
+        const sw = (p.goal ? 0.02 : T.sw);
+        const base = '<polygon data-id="'+p.id+'" points="'+pts+'" fill="'+fill+'" stroke="'+T.stroke+'" stroke-width="'+sw+'" stroke-linejoin="'+T.join+'"'+(T.filter?' filter="url(#'+T.filter+')"':'')+(T.opacity?' opacity="'+T.opacity+'"':'')+'><title>'+p.name+'</title></polygon>';
+        const tex = '<polygon data-id="'+p.id+'" class="tex" points="'+pts+'" fill="url(#p-'+LEVEL.theme+')" pointer-events="none"/>';
+        return base + tex;
       }).join('') +
+      '</g>' +
       '<polygon points="'+exitPts+'" fill="none" stroke="#0a84ff" stroke-width="0.06" stroke-dasharray="0.14 0.09" pointer-events="none"/>' +
     '</g>' +
     pieces.map((p, idx)=>{
@@ -436,8 +668,9 @@ function render(){
   if(selected){ const el=svg.querySelector('[data-id="'+selected+'"]'); if(el) el.classList.add('sel'); }
 }
 function updatePoly(p){
-  const el = svg.querySelector('polygon[data-id="'+p.id+'"]');
-  if(el) el.setAttribute('points', worldOf(p).map(([x,y])=>x.toFixed(3)+','+y.toFixed(3)).join(' '));
+  svg.querySelectorAll('polygon[data-id="'+p.id+'"]').forEach(el=>{
+    el.setAttribute('points', worldOf(p).map(([x,y])=>x.toFixed(3)+','+y.toFixed(3)).join(' '));
+  });
   const txt = svg.querySelector('text[data-id="'+p.id+'"]');
   if(txt){
     const [cx, cy] = centroid(p.poly);
@@ -524,7 +757,7 @@ const KEYS = { ArrowUp:[0,1], ArrowDown:[0,-1], ArrowLeft:[-1,0], ArrowRight:[1,
                q:[-1,1], e:[1,1], z:[-1,-1], c:[1,-1] };
 window.addEventListener('keydown', e=>{
   const k = e.key;
-  if(KEYS[k]){ e.preventDefault(); if(selected) tryMove(selected, KEYS[k][0], KEYS[k][1]); }
+  if(KEYS[k]){ e.preventDefault(); if(selected && !tryMove(selected, KEYS[k][0], KEYS[k][1])) hintLine('哎呀，这边走不动～换个别的方向试试！'); }
   else if(k==='u'||k==='U') undo();
   else if(k==='r'||k==='R') reset();
   else if(k==='h'||k==='H') hint();
@@ -532,7 +765,8 @@ window.addEventListener('keydown', e=>{
 document.querySelectorAll('#dpad button[data-d]').forEach(b=>{
   b.addEventListener('click', ()=>{
     if(!selected){ hintLine('先点击选中一块棋子'); return; }
-    const [dx,dy]=b.dataset.d.split(',').map(Number); tryMove(selected, dx, dy);
+    const [dx,dy]=b.dataset.d.split(',').map(Number);
+    if(!tryMove(selected, dx, dy)) hintLine('哎呀，这边走不动～换个别的方向试试！');
   });
 });
 $('btnUndo').onclick = undo;
@@ -595,6 +829,8 @@ function hint(){
   if(hintId) clearTimeout(hintId);
   hintId = setTimeout(()=>{ const e2=svg.querySelector('.hintpiece'); if(e2) e2.classList.remove('hintpiece'); }, 1800);
   hintLine('提示：移动【'+piece(id).name+'】向'+DIR_NAME[dx+','+dy]+'（最优 '+path.length+' 步）');
+  mascotMood('think');          // 吉祥物歪头思考
+  setTimeout(() => { if($('mascot')) { const m = $('mascot').classList; if(m.contains('think')) mascotMood('idle'); } }, 1900);
   // 只有「上一次提示之后有过棋盘操作」才累加；连续点提示不重复计数
   if(hintConsumed){
     saveHintCount(loadHintCount() + 1);
