@@ -650,10 +650,15 @@ function render(){
       '<g class="pieces theme-'+LEVEL.theme+'">' +
       pieces.map(p=>{
         const pts = worldOf(p).map(([x,y])=>x.toFixed(3)+','+y.toFixed(3)).join(' ');
-        const fill = (T.palette && T.palette[p.id]) || p.color;
-        const sw = (p.goal ? 0.02 : T.sw);
-        const base = '<polygon data-id="'+p.id+'" points="'+pts+'" fill="'+fill+'" stroke="'+T.stroke+'" stroke-width="'+sw+'" stroke-linejoin="'+T.join+'"'+(T.filter?' filter="url(#'+T.filter+')"':'')+(T.opacity?' opacity="'+T.opacity+'"':'')+'><title>'+p.name+'</title></polygon>';
-        const tex = '<polygon data-id="'+p.id+'" class="tex" points="'+pts+'" fill="url(#p-'+LEVEL.theme+')" pointer-events="none"/>';
+        const isGoal = p.goal;
+        // 目标块（逃出对象）保留本体颜色，不被主题调色板覆盖，确保与关卡描述对应（如"蓝块出逃"=蓝）；其余块沿用主题皮肤（不变）
+        const fill = isGoal ? p.color : ((T.palette && T.palette[p.id]) || p.color);
+        const sw = (isGoal ? 0.02 : T.sw);
+        const filterAttr = isGoal ? '' : (T.filter ? ' filter="url(#'+T.filter+')"' : '');
+        const opacityAttr = isGoal ? '' : (T.opacity ? ' opacity="'+T.opacity+'"' : '');
+        const base = '<polygon data-id="'+p.id+'" points="'+pts+'" fill="'+fill+'" stroke="'+T.stroke+'" stroke-width="'+sw+'" stroke-linejoin="'+T.join+'"'+filterAttr+opacityAttr+'><title>'+p.name+'</title></polygon>';
+        // 目标块不加主题纹理层（保持本色清晰可辨）；其余块叠主题纹理
+        const tex = isGoal ? '' : '<polygon data-id="'+p.id+'" class="tex" points="'+pts+'" fill="url(#p-'+LEVEL.theme+')" pointer-events="none"/>';
         return base + tex;
       }).join('') +
       '</g>' +
