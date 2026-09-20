@@ -66,6 +66,18 @@
     0%,100% { filter:none; stroke:#3A3A3A; }
     50% { stroke:#0a84ff !important; stroke-width:.07 !important; filter:drop-shadow(0 0 8px #0a84ff); }
   }
+  .combo-banner {
+    display:none; margin:10px auto 0; padding:8px 18px;
+    font-size:15px; font-weight:700; color:#fff; letter-spacing:1px;
+    background:linear-gradient(135deg,#FF8C00,#FFB800); border-radius:999px;
+    box-shadow:0 3px 12px rgba(255,140,0,.4);
+    animation: comboPop .6s cubic-bezier(.2,1.6,.4,1);
+  }
+  .combo-banner.show { display:inline-block; }
+  @keyframes comboPop { 0%{transform:scale(.3);opacity:0} 60%{transform:scale(1.12)} 100%{transform:scale(1);opacity:1} }
+  .combo-banner.hot { background:linear-gradient(135deg,#E23B2E,#FF6A00); box-shadow:0 3px 14px rgba(226,59,46,.5); }
+  .combo-banner.ultra { background:linear-gradient(135deg,#9C27B0,#E23B2E); box-shadow:0 3px 16px rgba(156,39,176,.55); animation:comboPop .6s cubic-bezier(.2,1.6,.4,1), comboTilt 1.2s ease-in-out infinite; }
+  @keyframes comboTilt { 0%,100%{transform:scale(1) rotate(-1.5deg)} 50%{transform:scale(1.05) rotate(1.5deg)} }
   .controls { width:100%; display:flex; gap:8px; justify-content:center; flex-wrap:wrap; }
   button.ctrl {
     background:#fff; border:1px solid #ccc; border-radius:9px; padding:9px 14px;
@@ -124,6 +136,7 @@
   <h2>🎉 过关！</h2>
   <div class="stars" id="resStars">★★★</div>
   <div class="meta" id="resMeta"></div>
+  <div class="combo-banner" id="comboBanner"></div>
   <button class="ctrl primary" id="btnAgain">再玩一次</button>
   <button class="ctrl primary" id="btnNextLevel" style="display:none">下一关 ›</button>
 </div></div>
@@ -318,6 +331,20 @@ function win(){
   saveBest(moves, timeMs, stars);
   updateProgress();
   updateNav();      // 通关后解锁下一关，刷新按钮状态
+
+  // 连击彩蛋：3 星累加连击，否则清零
+  let combo = loadCombo();
+  if(stars === 3){ combo++; saveCombo(combo); }
+  else { combo = 0; saveCombo(0); }
+  const banner = $('comboBanner');
+  const txt = comboText(combo);
+  if(txt){
+    banner.textContent = txt;
+    banner.className = 'combo-banner show' + (combo >= 7 ? ' ultra' : combo >= 5 ? ' hot' : '');
+  } else {
+    banner.className = 'combo-banner';
+    banner.textContent = '';
+  }
 }
 
 /* ================= 本地记录（仅最佳成绩） ================= */
@@ -329,6 +356,17 @@ function saveBest(moves, timeMs, stars){
     if(better) prev[LEVEL.id]={moves,timeMs,stars,at:new Date().toISOString()};
     localStorage.setItem(k, JSON.stringify(prev));
   }catch(e){}
+}
+
+/* ================= 连击成就（彩蛋） ================= */
+function loadCombo(){ try{ return parseInt(localStorage.getItem('tangram_combo')||'0',10); }catch(e){ return 0; } }
+function saveCombo(v){ try{ localStorage.setItem('tangram_combo', String(v)); }catch(e){} }
+// 连续三星赞美文案（按连击档位）
+function comboText(combo){
+  if(combo >= 7) return '🏆 全满星通关！你是七巧板大师！';
+  if(combo >= 5) return '🔥 五连绝世！势不可挡！';
+  if(combo >= 3) return '🎉 连过三关全三星！太棒了！';
+  return '';
 }
 
 /* ================= 渲染 ================= */

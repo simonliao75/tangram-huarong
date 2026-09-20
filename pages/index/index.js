@@ -376,6 +376,7 @@ Page({
     this.shake = null;
     this.newRecord = false;
     this.prevBestMoves = null;
+    this.comboBanner = null;
     this.goalFlashUntil = Date.now() + 3000;   // 每关开始闪烁提示目标块 3 秒
   },
 
@@ -407,6 +408,12 @@ Page({
     else this.newRecord = false;
     this.prevBestMoves = prevBest ? prevBest.moves : null;
     this.saveBest(this.moves, timeMs, stars);
+    // 连击彩蛋：3 星累加，否则清零
+    let combo = this.loadCombo();
+    if (stars === 3) { combo++; this.saveCombo(combo); }
+    else { combo = 0; this.saveCombo(0); }
+    const txt = this.comboText(combo);
+    this.comboBanner = txt ? { text: txt, tier: combo >= 7 ? 2 : combo >= 5 ? 1 : 0 } : null;
     // 通关后刷新导航按钮（解锁下一关）
     if (this.navBtns) {
       this.navBtns[1].enabled = this.isUnlocked(this.levelIndex + 1);
@@ -424,6 +431,21 @@ Page({
         wx.setStorageSync('tangram_best', prev);
       }
     } catch (e) {}
+  },
+
+  loadCombo() {
+    try { return parseInt(wx.getStorageSync('tangram_combo') || '0', 10); } catch (e) { return 0; }
+  },
+
+  saveCombo(v) {
+    try { wx.setStorageSync('tangram_combo', String(v)); } catch (e) {}
+  },
+
+  comboText(combo) {
+    if (combo >= 7) return '🏆 全满星通关！你是七巧板大师！';
+    if (combo >= 5) return '🔥 五连绝世！势不可挡！';
+    if (combo >= 3) return '🎉 连过三关全三星！太棒了！';
+    return '';
   },
 
   hintLine(t) {
@@ -646,7 +668,7 @@ Page({
       ctx.fillStyle = 'rgba(0,0,0,0.42)';
       ctx.fillRect(0, 0, W, H);
       const cw = Math.min(W - 64, 320);
-      const chh = 240;
+      const chh = this.comboBanner ? 290 : 240;
       const cx = (W - cw) / 2;
       const cy = (H - chh) / 2 - 30;
       this.rr(cx, cy, cw, chh, 16);
@@ -671,6 +693,28 @@ Page({
         ctx.fillStyle = '#888';
         ctx.font = '12px sans-serif';
         ctx.fillText('最佳 ' + this.prevBestMoves + ' 步', W / 2, cy + 152);
+      }
+      // 连击彩蛋横幅
+      if (this.comboBanner) {
+        const cb = this.comboBanner;
+        const bw = Math.min(cw - 40, ctx.measureText(cb.text).width + 40);
+        const bh = 34;
+        const by = cy + 178;
+        const bx = W / 2 - bw / 2;
+        const grad = ctx.createLinearGradient(bx, by, bx + bw, by);
+        if (cb.tier >= 2) { grad.addColorStop(0, '#9C27B0'); grad.addColorStop(1, '#E23B2E'); }
+        else if (cb.tier >= 1) { grad.addColorStop(0, '#E23B2E'); grad.addColorStop(1, '#FF6A00'); }
+        else { grad.addColorStop(0, '#FF8C00'); grad.addColorStop(1, '#FFB800'); }
+        ctx.save();
+        this.rr(bx, by, bw, bh, 17);
+        ctx.fillStyle = grad;
+        ctx.fill();
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 14px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(cb.text, W / 2, by + bh / 2 + 1);
+        ctx.restore();
       }
       const hasNext = this.levelIndex < LEVELS.length - 1 && this.isUnlocked(this.levelIndex + 1);
       if (hasNext) {
