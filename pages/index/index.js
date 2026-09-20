@@ -81,6 +81,8 @@ Page({
     this.goalFlashUntil = 0;
     this.hintLineText = '把蓝色方块移到底部正中的蓝框（出口）｜按住棋子拖动，或点选后用方向盘';
     this.hintPieceId = null;
+    this.hintCount = this.loadHintCount();   // 累计使用提示次数（跨会话持久化）
+    this.hintConsumed = true;                // 上次提示是否已被棋盘操作消耗
 
     // 布局
     this.PAD = 12;
@@ -92,6 +94,8 @@ Page({
     this.dpadBtns = [];
     this.ctrlBtns = [];
     this.againBtn = null;
+    this.restartBtn = null;
+    this.confirmRestart = false;   // 重新闯关二次确认弹窗
     this.dpadTop = 0;
     this.ctrlTop = 0;
 
@@ -113,9 +117,26 @@ Page({
   },
 
   gotoLevel(idx) {
+    this.confirmRestart = false;
     this.setLevel(idx);
     this.reset();
     this.layout();
+  },
+
+  restartAdventure() {
+    // 完全重置：清空所有关卡进度、连击、累计提示次数，从第一关重新闯关
+    try {
+      wx.removeStorageSync('tangram_best');
+      wx.removeStorageSync('tangram_combo');
+      wx.removeStorageSync('tangram_hints');
+    } catch (e) {}
+    this.confirmRestart = false;
+    this.hintConsumed = true;
+    this.hintCount = 0;      // HUD 提示次数归零
+    this.setLevel(0);
+    this.reset();
+    this.layout();
+    this.hintLine('已重新开始，从第一关闯关吧！');
   },
 
   starsFor(m) {
@@ -161,10 +182,11 @@ Page({
     const padBot = Math.max(padB, safeBottom + 12);
 
     const boardMaxW = Math.floor((W - 2 * this.PAD) * 0.75);
-    let B = Math.floor(Math.min(boardMaxW, H - (padTop + hudH + hintH + grid + 44 + gapB + gapC + navH + gapNav + padBot), 340));
+    const restartH = 50;   // 重新闯关按钮行的高度（40 + 10 上边距）
+    let B = Math.floor(Math.min(boardMaxW, H - (padTop + hudH + hintH + grid + 44 + gapB + gapC + navH + gapNav + restartH + padBot), 340));
     if (B < 140) B = 140;
 
-    const totalH = padTop + hudH + hintH + B + gapB + grid + gapC + 44 + gapNav + navH + padBot;
+    const totalH = padTop + hudH + hintH + B + gapB + grid + gapC + 44 + gapNav + navH + restartH + padBot;
     let topPad = Math.max(padTop, Math.floor((H - totalH) / 2));
 
     if (topPad + totalH > H - safeBottom) {
@@ -211,6 +233,12 @@ Page({
       { x: this.PAD, y: ny, w: nw, h: navH, label: '‹ 上一关', action: 'prev', enabled: this.levelIndex > 0 },
       { x: this.PAD + nw + 12, y: ny, w: nw, h: navH, label: this.isUnlocked(this.levelIndex + 1) ? '下一关 ›' : '🔒 下一关', action: 'next', enabled: this.isUnlocked(this.levelIndex + 1) },
     ];
+
+    // 重新闯关：危险操作，单独一行、红色样式，与常规按钮分开
+    this.restartBtn = {
+      x: this.PAD, y: ny + navH + 10, w: W - 2 * this.PAD, h: 40,
+      label: '🏁 重新闯关', action: 'restart', danger: true
+    };
   },
 
   modelToCanvas(p) {
@@ -347,6 +375,7 @@ Page({
     if (!this.t0) { this.t0 = Date.now(); this.startTimer(); }
     this.moves++;
     this.hintLine('');
+    this.hintConsumed = true;   // 棋盘被有效操作，消耗掉上一次提示，允许下次提示计数
     if (this.isWinState(this.offsets())) this.win();
     return true;
   },
@@ -448,6 +477,14 @@ Page({
     return '';
   },
 
+  loadHintCount() {
+    try { return parseInt(wx.getStorageSync('tangram_hints') || '0', 10); } catch (e) { return 0; }
+  },
+
+  saveHintCount(v) {
+    try { wx.setStorageSync('tangram_hints', String(v)); } catch (e) {}
+  },
+
   hintLine(t) {
     this.hintLineText = t;
   },
@@ -484,13 +521,31 @@ Page({
     const ctx = this.ctx;
     ctx.save();
     this.rr(b.x, b.y, b.w, b.h, 9);
-    ctx.fillStyle = b.primary ? '#327C99' : '#fff';
-    ctx.fill();
-    ctx.strokeStyle = b.primary ? '#327C99' : '#ccc';
-    ctx.lineWidth = 1;
-    ctx.stroke();
-    ctx.fillStyle = b.primary ? '#fff' : '#333';
-    ctx.font = '15px sans-serif';
+    if (b.danger) {
+      if (b.primary) {          // 红色实底（确认按钮）
+        ctx.fillStyle = '#E23B2E';
+        ctx.fill();
+        ctx.strokeStyle = '#E23B2E';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.fillStyle = '#fff';
+      } else {                  // 红色描边白底（危险提示按钮）
+        ctx.fillStyle = '#fff';
+        ctx.fill();
+        ctx.strokeStyle = '#E23B2E';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        ctx.fillStyle = '#E23B2E';
+      }
+    } else {
+      ctx.fillStyle = b.primary ? '#327C99' : '#fff';
+      ctx.fill();
+      ctx.strokeStyle = b.primary ? '#327C99' : '#ccc';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.fillStyle = b.primary ? '#fff' : '#333';
+    }
+    ctx.font = b.danger ? 'bold 15px sans-serif' : '15px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(b.label, b.x + b.w / 2, b.y + b.h / 2 + 1);
@@ -539,16 +594,25 @@ Page({
     ctx.font = '13px sans-serif';
     ctx.textAlign = 'right';
     const hudW = 96, hudGap = 10;
-    this.rr(W - this.PAD - hudW * 2 - hudGap, this.hudTop, hudW, 28, 8);
+    // 三个 HUD box：提示次数 | 计时 | 步数
+    const hintW = 72;
+    const totalW = hintW + hudW * 2 + hudGap * 2;
+    const x0 = W - this.PAD - totalW;
+    this.rr(x0, this.hudTop, hintW, 28, 8);
     ctx.fillStyle = '#fff'; ctx.fill();
     ctx.strokeStyle = '#ddd'; ctx.lineWidth = 1; ctx.stroke();
     ctx.fillStyle = '#333';
-    ctx.fillText('⏱' + this.timeText, W - this.PAD - hudW - hudGap - 6, this.hudTop + 14);
-    this.rr(W - this.PAD - hudW, this.hudTop, hudW, 28, 8);
+    ctx.fillText('💡' + this.hintCount, x0 + hintW - 6, this.hudTop + 14);
+    this.rr(x0 + hintW + hudGap, this.hudTop, hudW, 28, 8);
     ctx.fillStyle = '#fff'; ctx.fill();
     ctx.strokeStyle = '#ddd'; ctx.lineWidth = 1; ctx.stroke();
     ctx.fillStyle = '#333';
-    ctx.fillText('步数 ' + this.moves + ' / ' + this.optimal, W - this.PAD - 6, this.hudTop + 14);
+    ctx.fillText('⏱' + this.timeText, x0 + hintW + hudGap + hudW - 6, this.hudTop + 14);
+    this.rr(x0 + hintW + hudGap * 2 + hudW, this.hudTop, hudW, 28, 8);
+    ctx.fillStyle = '#fff'; ctx.fill();
+    ctx.strokeStyle = '#ddd'; ctx.lineWidth = 1; ctx.stroke();
+    ctx.fillStyle = '#333';
+    ctx.fillText('步数 ' + this.moves + ' / ' + this.optimal, x0 + hintW + hudGap * 2 + hudW * 2 - 6, this.hudTop + 14);
 
     // 提示行
     ctx.fillStyle = '#777';
@@ -663,6 +727,9 @@ Page({
       ctx.restore();
     }
 
+    // 重新闯关按钮（危险操作，红色，单独一行）
+    if (this.restartBtn) this.drawBtn(this.restartBtn);
+
     // 胜利弹窗
     if (this.won) {
       ctx.fillStyle = 'rgba(0,0,0,0.42)';
@@ -732,6 +799,33 @@ Page({
         this.drawBtn(this.againBtn);
       }
     }
+
+    // 重新闯关二次确认弹窗
+    if (this.confirmRestart) {
+      ctx.fillStyle = 'rgba(0,0,0,0.5)';
+      ctx.fillRect(0, 0, W, H);
+      const cw = Math.min(W - 64, 320);
+      const chh = 190;
+      const cx = (W - cw) / 2;
+      const cy = (H - chh) / 2 - 30;
+      this.rr(cx, cy, cw, chh, 16);
+      ctx.fillStyle = '#fff'; ctx.fill();
+      ctx.fillStyle = '#E23B2E';
+      ctx.font = '22px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('⚠️ 重新闯关？', W / 2, cy + 44);
+      ctx.fillStyle = '#555';
+      ctx.font = '13px sans-serif';
+      ctx.fillText('将清空所有关卡进度与星级，', W / 2, cy + 82);
+      ctx.fillText('从第一关重新开始，不可撤销。', W / 2, cy + 102);
+      const bw = Math.floor((cw - 60) / 2);
+      const by = cy + chh - 58;
+      this.confirmCancelBtn = { x: cx + 20, y: by, w: bw, h: 40, label: '取消', primary: false };
+      this.confirmOkBtn = { x: cx + 40 + bw, y: by, w: bw, h: 40, label: '确认重置', primary: true, danger: true };
+      this.drawBtn(this.confirmCancelBtn);
+      this.drawBtn(this.confirmOkBtn);
+    }
   },
 
   hitTest(p) {
@@ -795,6 +889,17 @@ Page({
     const cx = t.x;
     const cy = t.y;
 
+    // 二次确认弹窗优先处理
+    if (this.confirmRestart) {
+      if (this.confirmCancelBtn && this.ptInRect(cx, cy, this.confirmCancelBtn)) { this.confirmRestart = false; return; }
+      if (this.confirmOkBtn && this.ptInRect(cx, cy, this.confirmOkBtn)) {
+        this.confirmRestart = false;
+        this.restartAdventure();
+        return;
+      }
+      return;   // 点击弹窗其他区域不做任何事
+    }
+
     if (this.won) {
       if (this.ptInRect(cx, cy, this.againBtn)) { this.reset(); return; }
       if (this.nextBtn && this.ptInRect(cx, cy, this.nextBtn)) { this.gotoLevel(this.levelIndex + 1); return; }
@@ -813,6 +918,11 @@ Page({
         this.gotoLevel(this.levelIndex + (b.action === 'next' ? 1 : -1));
         return;
       }
+    }
+    // 重新闯关按钮：先弹二次确认
+    if (this.restartBtn && this.ptInRect(cx, cy, this.restartBtn)) {
+      this.confirmRestart = true;
+      return;
     }
     for (const b of this.dpadBtns) {
       if (b.d && this.ptInRect(cx, cy, b)) {
@@ -895,6 +1005,12 @@ Page({
     if (this.hintId) clearTimeout(this.hintId);
     this.hintId = setTimeout(() => { this.hintUntil = 0; }, 1800);
     this.hintLine('提示：移动【' + this.piece(id).name + '】向' + this.DIR_NAME[dx + ',' + dy] + '（最优 ' + path.length + ' 步）');
+    // 只有「上一次提示之后有过棋盘操作」才累加；连续点提示不重复计数
+    if (this.hintConsumed) {
+      this.hintCount += 1;
+      this.saveHintCount(this.hintCount);
+      this.hintConsumed = false;
+    }
   },
 
   onHide() {

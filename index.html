@@ -85,6 +85,17 @@
   }
   button.ctrl:active { background:#eee; }
   button.primary { background:#327C99; border-color:#327C99; color:#fff; }
+  /* 重新闯关：危险操作，单独成行，红系样式与常规按钮区分 */
+  .restart-zone { width:100%; display:flex; justify-content:center; margin-top:10px; }
+  button.ctrl.danger { background:#fff; border:1px solid #E23B2E; color:#E23B2E; }
+  button.ctrl.danger:active { background:#FDECEA; }
+  button.ctrl.danger.solid { background:#E23B2E; border-color:#E23B2E; color:#fff; }
+  /* 确认弹窗 */
+  .confirm { position:fixed; inset:0; background:rgba(0,0,0,.42); display:none;
+             align-items:center; justify-content:center; z-index:30; }
+  .confirm.show { display:flex; }
+  .confirm-card { max-width:320px; }
+  .confirm-actions { display:flex; gap:10px; justify-content:center; margin-top:16px; }
   #dpad { display:grid; grid-template-columns:repeat(3, 46px); grid-template-rows:repeat(3, 46px);
           gap:5px; justify-content:center; margin:2px 0; }
   #dpad button { background:#fff; border:1px solid #ccc; border-radius:10px; font-size:20px;
@@ -114,6 +125,7 @@
     <div class="hud">
       <span class="box">⏱<b id="timer">00:00</b></span>
       <span class="box">步数 <b id="moves">0</b><span style="color:#999"> / <span id="optimal">13</span></span></span>
+      <span class="box">💡<b id="hintCount">0</b></span>
     </div>
   </header>
   <div class="hint-line" id="hintLine">把蓝色方块移到底部正中的蓝框（出口）｜按住棋子拖动，或点选后用方向键/Q E Z C/方向盘</div>
@@ -126,9 +138,12 @@
   <div class="controls">
     <button class="ctrl" id="btnUndo">↩ 撤销</button>
     <button class="ctrl" id="btnReset">🔄 重开</button>
-    <button class="ctrl primary" id="btnHint">💡 提示</button>
+    <button class="ctrl" id="btnHint">💡 提示</button>
     <button class="ctrl" id="btnPrev">‹ 上一关</button>
     <button class="ctrl" id="btnNext">下一关 ›</button>
+  </div>
+  <div class="restart-zone">
+    <button class="ctrl danger" id="btnRestart">🏁 重新闯关</button>
   </div>
 </div>
 
@@ -140,6 +155,17 @@
   <button class="ctrl primary" id="btnAgain">再玩一次</button>
   <button class="ctrl primary" id="btnNextLevel" style="display:none">下一关 ›</button>
 </div></div>
+
+<div id="confirm" class="confirm">
+  <div class="card confirm-card">
+    <h2>⚠️ 重新闯关？</h2>
+    <div class="meta">将清空所有关卡进度与星级，从第一关重新开始。<br>此操作不可撤销。</div>
+    <div class="confirm-actions">
+      <button class="ctrl" id="btnCancelRestart">取消</button>
+      <button class="ctrl danger" id="btnConfirmRestart">确认重置</button>
+    </div>
+  </div>
+</div>
 
 <script src="pages/index/levels.js"></script>
 <script>
@@ -167,6 +193,19 @@ function setLevel(idx){
   updateProgress();
 }
 function gotoLevel(idx){ setLevel(idx); reset(); }
+function restartAdventure(){
+  // 完全重置：清空所有关卡进度、连击、累计提示次数，从第一关重新闯关
+  try{
+    localStorage.removeItem('tangram_best');
+    localStorage.removeItem('tangram_combo');
+    localStorage.removeItem('tangram_hints');
+  }catch(e){}
+  hintConsumed = true;
+  renderHintCount();      // HUD 提示次数归零
+  gotoLevel(0);
+  updateProgress();
+  hintLine('已重新开始，从第一关闯关吧！');
+}
 function isUnlocked(idx){
   if(idx <= 0) return true;                          // 第 1 关始终可玩
   return levelStars(LEVELS[idx-1].id) > 0;           // 前一关已通关才解锁
@@ -288,6 +327,7 @@ function tryMove(id, dx, dy){
   if(!t0){ t0 = Date.now(); startTimer(); }
   moves++; $('moves').textContent = moves;
   hintLine('');
+  hintConsumed = true;   // 棋盘被有效操作，消耗掉上一次提示，允许下次提示计数
   updatePoly(pieces[i]);
   if(isWinState(offsets())) win();
   return true;
@@ -368,6 +408,11 @@ function comboText(combo){
   if(combo >= 3) return '🎉 连过三关全三星！太棒了！';
   return '';
 }
+
+/* ================= 累计提示次数 ================= */
+function loadHintCount(){ try{ return parseInt(localStorage.getItem('tangram_hints')||'0',10); }catch(e){ return 0; } }
+function saveHintCount(v){ try{ localStorage.setItem('tangram_hints', String(v)); }catch(e){} }
+function renderHintCount(){ const el = $('hintCount'); if(el) el.textContent = loadHintCount(); }
 
 /* ================= 渲染 ================= */
 function render(){
@@ -493,6 +538,13 @@ document.querySelectorAll('#dpad button[data-d]').forEach(b=>{
 $('btnUndo').onclick = undo;
 $('btnReset').onclick = reset;
 $('btnAgain').onclick = reset;
+// 重新闯关：先弹确认框，确认后才真正重置
+$('btnRestart').onclick = () => { $('confirm').classList.add('show'); };
+$('btnCancelRestart').onclick = () => { $('confirm').classList.remove('show'); };
+$('btnConfirmRestart').onclick = () => {
+  $('confirm').classList.remove('show');
+  restartAdventure();
+};
 $('btnPrev').onclick = () => gotoLevel(levelIndex - 1);
 $('btnNext').onclick = () => {
   if(!isUnlocked(levelIndex + 1)){ hintLine('先通关本关，解锁下一关'); return; }
@@ -530,6 +582,7 @@ function solve(){
   return null;
 }
 let hintId=null;
+let hintConsumed=true;   // 上次提示是否已被「棋盘操作」消耗；true 表示可以累加下一次提示
 function hint(){
   if(won) return;
   const path = solve();
@@ -542,6 +595,12 @@ function hint(){
   if(hintId) clearTimeout(hintId);
   hintId = setTimeout(()=>{ const e2=svg.querySelector('.hintpiece'); if(e2) e2.classList.remove('hintpiece'); }, 1800);
   hintLine('提示：移动【'+piece(id).name+'】向'+DIR_NAME[dx+','+dy]+'（最优 '+path.length+' 步）');
+  // 只有「上一次提示之后有过棋盘操作」才累加；连续点提示不重复计数
+  if(hintConsumed){
+    saveHintCount(loadHintCount() + 1);
+    renderHintCount();
+    hintConsumed = false;
+  }
 }
 $('btnHint').onclick = hint;
 
@@ -553,7 +612,7 @@ function sizeBoard(){
           ? window.visualViewport.height : window.innerHeight;
   // 动态测量除棋盘外所有 UI 占用的高度：#app 上下内边距 24 + 4 个间距 40 + 各元素实际高度
   const meas = sel => { const el = document.querySelector(sel); return el ? el.offsetHeight : 0; };
-  const uiH = 24 + 40 + meas('header') + meas('.hint-line') + meas('#dpad') + meas('.controls');
+  const uiH = 24 + 40 + meas('header') + meas('.hint-line') + meas('#dpad') + meas('.controls') + meas('.restart-zone');
   const size = Math.floor(Math.min(w - 24, h - uiH - 8, 460));
   svg.setAttribute('width', Math.max(180, size));
   svg.setAttribute('height', Math.max(180, size));
@@ -564,6 +623,7 @@ function sizeBoard(){
   if(window.visualViewport) window.visualViewport.addEventListener('resize', sizeBoard);
   setLevel(0);      // 载入第 1 关
   reset();          // 每次打开都从初始局面开始，状态全部初始化（不再恢复存档，避免隐患）
+  renderHintCount();// 显示累计提示次数
 })();
 </script>
 </body>
