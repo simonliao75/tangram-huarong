@@ -34,36 +34,27 @@ if(sys.safeArea){
   safeTop    = Math.max(0, sys.safeArea.top || 0);
   safeBottom = Math.max(0, H - (sys.safeArea.bottom || H));
 }
-// 运行平台（仅用于诊断显示）
+// 运行平台（仅用于诊断显示，延迟到 jsbridge 就绪后再获取，避免冷启动报错）
 let PLATFORM = 'unknown';
-try { const s = wx.getSystemInfoSync ? wx.getSystemInfoSync() : null; PLATFORM = (s && s.platform) || 'unknown'; } catch(e){}
 // ---- 屏幕适配核心 ----
-// 微信小游戏统一使用物理像素缓冲 + DPR 坐标变换：
-//   canvas.width/height = 逻辑窗口 × DPR
-//   ctx.setTransform(DPR, ...) 之后所有绘制按逻辑坐标（u、px 均与 H5 版一致）
-// 不再探测框架预置比例；无论框架预置的是逻辑还是物理缓冲，都重写为物理缓冲。
-let bufScale = DPR, bufFrom = 'DPR';
+// 主画布以「物理像素」为缓冲区（windowWidth*pixelRatio），再用 ctx 缩放 DPR，
+// 使后续所有绘制都以「逻辑像素」坐标进行。真机与开发者工具均按物理像素 1:1 全屏显示，
+// 这样既不糊也不溢出。注意：绝不能用逻辑像素当缓冲区——否则高分屏会被整体放大 DPR 倍，
+// 出现「棋盘巨大/展示不全、按钮错位」的现象（图 2 即此症状）。
+let bufScale = DPR, bufFrom = 'physical';
 // 框架预置的缓冲尺寸——仅用于诊断输出
-let fwW = 0, fwH = 0;
+let fwW = 1, fwH = 1;
 try { fwW = canvas.width | 0; fwH = canvas.height | 0; } catch(e){}
 function probeBuffer(){
-  // 诊断信息：保留预置比例描述，但实际始终采用 DPR
-  if (!(W > 0 && H > 0 && fwW > 0 && fwH > 0)){ bufFrom = 'DPR(fallback)'; return; }
-  const rw = fwW / W, rh = fwH / H;
-  if (rw >= 1.35 && rh >= 1.35) bufFrom = 'DPR(was-physical)';
-  else if (rw >= 0.6 && rw <= 1.35 && rh >= 0.6 && rh <= 1.35) bufFrom = 'DPR(was-logical)';
-  else bufFrom = 'DPR';
+  bufFrom = 'physical';
 }
 probeBuffer();
 function setupCanvas(){
-  if(!sysPending){              // 桥未就绪时不要动画布尺寸，避免用兜底窗口尺寸污染框架的预置缓冲
-    canvas.width = Math.round(W * bufScale);
-    canvas.height = Math.round(H * bufScale);
-  }
-  try {                       // 部分基础库按 style 控制画布显示尺寸，一并设置（逻辑像素）
-    if(canvas.style){ canvas.style.width = W + 'px'; canvas.style.height = H + 'px'; }
-  }catch(e){}
-  ctx.setTransform(bufScale, 0, 0, bufScale, 0, 0);
+  // W/H 已是逻辑像素（windowWidth/windowHeight），缓冲区用物理像素
+  canvas.width = Math.round(W * DPR);
+  canvas.height = Math.round(H * DPR);
+  // 关键：把逻辑坐标缩放 DPR 倍，映射到物理缓冲区——之后绘制全部用逻辑坐标
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
 }
 setupCanvas();
 function retryInfo(){
@@ -108,7 +99,7 @@ let t0 = null, timerHandle = null, timeText = '00:00';
 let pauseAt = null;               // 切后台时记录暂停时刻，回前台后补偿
 let hintUntil = 0, hintId = null, hintMsg = '';
 let shake = null; // {id, t0}
-let hintLineText = '把蓝色方块移到底部正中的红框（出口）｜按住棋子拖动，或点选后用方向盘';
+let hintLineText = '把蓝色方块移到底部正中的蓝框（出口）｜按住棋子拖动，或点选后用方向盘';
 let hintPieceId = null;
 let bestCache = null;
 
@@ -272,7 +263,7 @@ function reset(){
   pieces = LEVEL.pieces.map(p => ({ ...p, poly:p.poly.map(v=>v.slice()), offset:p.offset.slice() }));
   moves = 0; won = false; selected = null; undoStack = [];
   stopTimer(); t0 = null; timeText = '00:00'; pauseAt = null;
-  hintLine('把蓝色方块移到底部正中的红框（出口）｜按住棋子拖动，或点选后用方向盘');
+  hintLine('把蓝色方块移到底部正中的蓝框（出口）｜按住棋子拖动，或点选后用方向盘');
   if(hintId){ clearTimeout(hintId); hintId = null; }
   hintUntil = 0; shake = null;
 }
@@ -284,7 +275,7 @@ function fmt(ms){ const s=Math.floor(ms/1000); return String(Math.floor(s/60)).p
 
 function win(){
   won = true; stopTimer();
-  const timeMs = Date.now()-t0, stars = moves<=11?3 : moves<=16?2 : 1;
+  const timeMs = Date.now()-t0, stars = moves<=13?3 : moves<=18?2 : 1;
   saveBest(moves, timeMs, stars);
 }
 
@@ -338,9 +329,9 @@ function drawBtn(b){
   ctx.restore();
 }
 function render(now){
-  // 背景（覆盖整个实际缓冲,避免框架缓冲比窗口宽时右侧出现空条）
+  // 背景
   ctx.fillStyle = '#F5F3EE';
-  ctx.fillRect(0, 0, Math.max(W, canvas.width), Math.max(H, canvas.height));
+  ctx.fillRect(0, 0, W, H);
 
   // 标题与 HUD
   ctx.fillStyle = '#222';
@@ -355,7 +346,7 @@ function render(now){
   ctx.fillStyle = '#fff'; ctx.fill();
   ctx.strokeStyle = '#ddd'; ctx.lineWidth = 1; ctx.stroke();
   ctx.fillStyle = '#333';
-  ctx.fillText('步数 ' + moves + ' / 11', W - PAD - hudW - 4, hudTop + 14);
+  ctx.fillText('步数 ' + moves + ' / 13', W - PAD - hudW - 4, hudTop + 14);
   rr(W - PAD - hudW, hudTop, hudW, 28, 8);
   ctx.fillStyle = '#fff'; ctx.fill();
   ctx.strokeStyle = '#ddd'; ctx.lineWidth = 1; ctx.stroke();
@@ -373,16 +364,8 @@ function render(now){
   ctx.fillStyle = '#fff'; ctx.fill();
   ctx.strokeStyle = '#ddd'; ctx.lineWidth = 1; ctx.stroke();
 
-  // 棋盘与出口
+  // 棋盘
   drawPoly([[0,0],[3,0],[3,3],[0,3]], '#fff', '#222', Math.max(1, 0.03*B));
-  // 出口（虚线红框，位于底部正中）
-  ctx.save();
-  const e0 = modelToCanvas([1,0]), e1 = modelToCanvas([2,1]);
-  ctx.setLineDash([Math.max(4, 0.14*B), Math.max(3, 0.09*B)]);
-  ctx.strokeStyle = '#E23B2E';
-  ctx.lineWidth = Math.max(1, 0.04*B);
-  ctx.strokeRect(e0[0], e0[1], e1[0]-e0[0], e1[1]-e0[1]);
-  ctx.restore();
 
   // 棋子
   const nowMs = now || Date.now();
@@ -416,6 +399,15 @@ function render(now){
     ctx.restore();
   }
 
+  // 出口（蓝色虚线框，绘制在棋子之上）
+  ctx.save();
+  const e0 = modelToCanvas([1,0]), e1 = modelToCanvas([2,1]);
+  ctx.setLineDash([Math.max(4, 0.14*B), Math.max(3, 0.09*B)]);
+  ctx.strokeStyle = '#0a84ff';
+  ctx.lineWidth = Math.max(2, 0.06*B);
+  ctx.strokeRect(e0[0], e0[1], e1[0]-e0[0], e1[1]-e0[1]);
+  ctx.restore();
+
   // 方向盘
   for(const b of dpadBtns){
     ctx.save();
@@ -441,7 +433,7 @@ function render(now){
   // 胜利弹窗
   if(won){
     ctx.fillStyle = 'rgba(0,0,0,0.42)';
-    ctx.fillRect(0, 0, Math.max(W, canvas.width), Math.max(H, canvas.height));
+    ctx.fillRect(0, 0, W, H);
     const cw = Math.min(W - 64, 320), chh = 220;
     const cx = (W - cw)/2, cy = (H - chh)/2 - 30;
     rr(cx, cy, cw, chh, 16);
@@ -451,7 +443,7 @@ function render(now){
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('过关！', W/2, cy + 44);
-    const stars = moves<=11?3 : moves<=16?2 : 1;
+    const stars = moves<=13?3 : moves<=18?2 : 1;
     ctx.fillStyle = '#FFB800';
     ctx.font = '32px sans-serif';
     ctx.fillText('★'.repeat(stars) + '☆'.repeat(3-stars), W/2, cy + 92);
@@ -584,7 +576,7 @@ if(wx.onShow) wx.onShow(()=>{
   retryInfo();                // 兜底：jsbridge 若在启动后才就绪，趁 onShow 补取真实窗口信息
   if(pauseAt != null && t0 && !won){ t0 += Date.now() - pauseAt; pauseAt = null; startTimer(); }
   // 兜底：个别基础库在回前台时会重置主画布，检测到缓冲不符则重设
-  if(canvas.width !== Math.round(W * bufScale) || canvas.height !== Math.round(H * bufScale)){
+  if(canvas.width !== Math.round(W * DPR) || canvas.height !== Math.round(H * DPR)){
     setupCanvas();
     layout();
   }

@@ -63,7 +63,7 @@
     <h1>七巧板华容道</h1>
     <div class="hud">
       <span class="box">⏱<b id="timer">00:00</b></span>
-      <span class="box">步数 <b id="moves">0</b><span style="color:#999"> / 11</span></span>
+      <span class="box">步数 <b id="moves">0</b><span style="color:#999"> / 13</span></span>
     </div>
   </header>
   <div class="hint-line" id="hintLine">把蓝色方块移到底部正中的蓝框（出口）｜按住棋子拖动，或点选后用方向键/Q E Z C/方向盘</div>
@@ -207,7 +207,7 @@ function fmt(ms){ const s=Math.floor(ms/1000); return String(Math.floor(s/60)).p
 
 function win(){
   won = true; stopTimer();
-  const timeMs = Date.now()-t0, stars = moves<=11?3 : moves<=16?2 : 1;
+  const timeMs = Date.now()-t0, stars = moves<=13?3 : moves<=18?2 : 1;
   $('resStars').textContent = '★'.repeat(stars) + '☆'.repeat(3-stars);
   $('resMeta').innerHTML = '步数 <b>'+moves+'</b> · 用时 '+fmt(timeMs);
   $('result').classList.add('show');
